@@ -256,19 +256,32 @@ function gatherComponents(sources, components = {}) {
         value = typeObj.types
             .filter(t => {
                 let typeName = t.intrinsicName;
-                if (!typeName) {
-                    if (t.members) {
+
+                // FIX: TypeScript resolves boolean to true|false literals
+                // Check intrinsicName directly (not just when undefined)
+                if (typeName === 'true' || typeName === 'false') {
+                    typeName = 'boolean';
+                } else if (!typeName) {
+                    typeName = checker.typeToString(t);
+
+                    // FIX: Handle intersection types like "number & {}" or "string & {}"
+                    // These are CSS property types that should be treated as their base type
+                    const intersectionMatch = typeName.match(/^(number|string|boolean)\s*&\s*\{\}/);
+                    if (intersectionMatch) {
+                        typeName = intersectionMatch[1];
+                    }
+
+                    if (!typeName && t.members) {
                         typeName = 'object';
                     }
                 }
+
                 if (t.value) {
                     // A literal value
                     return true;
                 }
-                return (
-                    unionSupport.includes(typeName) ||
-                    isArray(checker.typeToString(t))
-                );
+
+                return unionSupport.includes(typeName) || isArray(checker.typeToString(t));
             })
             .map(t => t.value ? {name: 'literal', value: t.value} : getPropType(t, propObj, parentType));
 
@@ -310,7 +323,9 @@ function gatherComponents(sources, components = {}) {
         if (propType.isUnion()) {
             if (isUnionLiteral(propType)) {
                 return {...getEnum(propType), raw};
-            } else if (raw.includes('|')) {
+            } else {
+                // FIX: Don't check raw.includes('|') - TypeScript may represent unions 
+                // without "|" (e.g., StyleProp<FontWeight> is a union but doesn't show "|")
                 return {...getUnion(propType, propObj, newParentType), raw};
             }
         }
